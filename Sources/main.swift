@@ -1186,7 +1186,7 @@ final class Simulation {
         if effect == .snow { drawBodies(c) }
         drawWater(c)
         drawBoat(c)
-        // (Christmas lights are drawn by the front overlay, above windows, not here.)
+        drawLights(c)      // behind every window, so the strings never cover window content
 
         // particles
         switch effect {
@@ -1283,7 +1283,6 @@ final class Simulation {
 
 final class OverlayView: NSView {
     let sim: Simulation
-    var onFrame: (() -> Void)?        // redraw the front (lights) layer each tick
     private var link: CADisplayLink?
     private var last: CFTimeInterval = 0
 
@@ -1320,7 +1319,6 @@ final class OverlayView: NSView {
         sim.step(CGFloat(dt))
         if let l = layer, l.contentsScale != 1 { l.contentsScale = 1 }
         needsDisplay = true
-        onFrame?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -1330,35 +1328,9 @@ final class OverlayView: NSView {
     }
 }
 
-/// A second, click-through overlay that sits ABOVE app windows and draws only the Christmas
-/// lights, so the user's strings are visible everywhere — not hidden behind windows like the
-/// weather. It shares the back view's simulation; the back view's display link drives both.
-final class FrontView: NSView {
-    let sim: Simulation
-    init(sim: Simulation, size: CGSize) {
-        self.sim = sim
-        super.init(frame: CGRect(origin: .zero, size: size))
-        wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override var isOpaque: Bool { false }
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        layer?.contentsScale = 1
-    }
-    override func draw(_ dirtyRect: NSRect) {
-        guard let c = NSGraphicsContext.current?.cgContext else { return }
-        c.clear(bounds)
-        sim.drawLights(c)
-    }
-}
-
 final class Overlay {
     let window: NSWindow
     let view: OverlayView
-    let frontWindow: NSWindow
-    let frontView: FrontView
 
     init(screen: NSScreen) {
         window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -1374,27 +1346,11 @@ final class Overlay {
         window.isReleasedWhenClosed = false
         view = OverlayView(screen: screen)
         window.contentView = view
-
-        // Front overlay for the Christmas lights: above every app window so they show up everywhere.
-        frontWindow = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-        frontWindow.setFrame(screen.frame, display: false)
-        frontWindow.isOpaque = false
-        frontWindow.backgroundColor = .clear
-        frontWindow.hasShadow = false
-        frontWindow.ignoresMouseEvents = true
-        frontWindow.level = .floating
-        frontWindow.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
-        frontWindow.isReleasedWhenClosed = false
-        frontView = FrontView(sim: view.sim, size: screen.frame.size)
-        frontWindow.contentView = frontView
-        view.onFrame = { [weak frontView] in frontView?.needsDisplay = true }
-
         window.orderFrontRegardless()
-        frontWindow.orderFrontRegardless()
         view.start()
     }
 
-    func close() { view.stop(); window.orderOut(nil); frontWindow.orderOut(nil) }
+    func close() { view.stop(); window.orderOut(nil) }
 }
 
 // MARK: - Menu slider
